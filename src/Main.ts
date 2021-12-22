@@ -1,8 +1,9 @@
-import { ApolloServer, gql } from 'apollo-server-express';
+import { ApolloServer, ExpressContext, gql } from 'apollo-server-express';
 import { ApolloServerPluginDrainHttpServer } from 'apollo-server-core';
 import express from 'express';
 import http from 'http';
-import { DocumentNode } from 'graphql';
+
+import * as schemasArr from "./schemas";
 
 const books = [
     {
@@ -15,59 +16,42 @@ const books = [
     },
 ];
 
-const typeDefs = gql`
-  # Comments in GraphQL strings (such as this one) start with the hash (#) symbol.
+class Server {
+    private readonly _APP: express.Express = express();
+    private readonly _SERVER: http.Server = http.createServer(this._APP);
+    private readonly _APOLLO_SERVER: ApolloServer<ExpressContext>;
 
-  # This "Book" type defines the queryable fields for every book in our data source.
-  type Book {
-    title: String
-    author: String
-  }
+    constructor() {
+        this._APP = express();
+        this._SERVER = http.createServer(this._APP);
+        this._APOLLO_SERVER = new ApolloServer({
+            typeDefs: gql(schemasArr.default.toString()),
+            resolvers: {
+                Query: {
+                    books: () => books,
+                },
+            },
+            plugins: [
+                ApolloServerPluginDrainHttpServer({
+                    httpServer: this._SERVER
+                })
+            ],
+        });
+    }
 
-  # The "Query" type is special: it lists all of the available queries that
-  # clients can execute, along with the return type for each. In this
-  # case, the "books" query returns an array of zero or more Books (defined above).
-  type Query {
-    books: [Book]
-  }
-`;
-
-const resolvers = {
-    Query: {
-        books: () => books,
-    },
-};
-
-// query GetBooks {
-//     books {
-//         title
-//         author
-//     }
-// }
+    public async startServer(): Promise<void> {
+        await this._APOLLO_SERVER.start();
+        this._APOLLO_SERVER.applyMiddleware({
+            app: this._APP
+        });
+        this._SERVER.listen(4000);
+        console.log(`🚀 Server ready at http://localhost:4000${this._APOLLO_SERVER.graphqlPath}`);
+    }
+}
 
 // curl --request POST \
 //   --header 'content-type: application/json' \
 //   --url http://localhost:4000/graphql \
 //   --data '{"query":"query { __typename }"}'
 
-async function startApolloServer(typeDefs: DocumentNode, resolvers: any) {
-    const app = express();
-    const httpServer = http.createServer(app);
-
-    const server = new ApolloServer({
-        typeDefs,
-        resolvers,
-        plugins: [ApolloServerPluginDrainHttpServer({ httpServer })],
-    });
-
-    await server.start();
-    server.applyMiddleware({ app });
-    await new Promise((res) => {
-        httpServer.listen({ port: 4000 })
-        res(0)
-    });
-
-    console.log(`🚀 Server ready at http://localhost:4000${server.graphqlPath}`);
-}
-
-startApolloServer(typeDefs, resolvers)
+new Server().startServer();

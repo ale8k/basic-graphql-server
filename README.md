@@ -1,1 +1,1 @@
-I'm a template 418
+Basic GraphQL server to practice schema creation / queries
